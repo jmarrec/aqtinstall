@@ -1,9 +1,10 @@
 import os
-
 import pytest
+from semantic_version import Version
 
-from aqt.archives import QtArchives
+from aqt.archives import QtArchives, ToolArchives
 from aqt.helper import Settings
+from aqt.exceptions import NoPackageFound
 
 
 @pytest.mark.parametrize(
@@ -51,3 +52,60 @@ def test_parse_update_xml(monkeypatch, os_name, version, target, datafile):
 
     # Assert if list_diff contains urls without target specified
     assert unwanted_targets == []
+
+
+@pytest.mark.parametrize(
+    "os_name,version,arch,datafile,expected",
+    [
+        (
+            "linux",
+            "4.1.1",
+            "qt.tools.ifw.41",
+            "linux-tools-ifw-update.xml",
+            "4.1.1-202105261130",
+        ),
+        (
+            "linux",
+            None,
+            "qt.tools.ifw.41",
+            "linux-tools-ifw-update.xml",
+            "4.1.1-202105261130",
+        ),
+        ("linux", None, None, "linux-tools-ifw-update.xml", "4.1.1-202105261130"),
+        ("linux", "4.1.1", None, "linux-tools-ifw-update.xml", "4.1.1-202105261130"),
+        ("linux", "4.1", None, "linux-tools-ifw-update.xml", "4.1.1-202105261130"),
+        ("linux", "4", None, "linux-tools-ifw-update.xml", "4.1.1-202105261130"),
+        ("linux", "4.1.0", None, "linux-tools-ifw-update.xml", None),
+        ("linux", "4.0", None, "linux-tools-ifw-update.xml", None),
+        ("linux", "3", None, "linux-tools-ifw-update.xml", None),
+    ],
+)
+def test_tool_parse_update_xml(monkeypatch, os_name, version, arch, datafile, expected):
+    def _mock(self, url):
+        with open(os.path.join(os.path.dirname(__file__), "data", datafile), "r") as f:
+            self.update_xml_text = f.read()
+
+    monkeypatch.setattr(QtArchives, "_download_update_xml", _mock)
+
+    Settings.load_settings(
+        os.path.join(os.path.dirname(__file__), "data", "settings.ini")
+    )
+    if expected is not None:
+        qt_archives = ToolArchives(
+            os_name=os_name,
+            tool_name="tools_ifw",
+            base=Settings.baseurl,
+            version_str=version,
+            arch=arch,
+        )
+        assert len(qt_archives.archives) == 1
+        assert qt_archives.archives[0].version == Version(expected)
+    else:
+        with pytest.raises(NoPackageFound):
+            qt_archives = ToolArchives(
+                os_name=os_name,
+                tool_name="tools_ifw",
+                base=Settings.baseurl,
+                version_str=version,
+                arch=arch,
+            )
