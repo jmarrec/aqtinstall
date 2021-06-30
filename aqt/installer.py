@@ -421,12 +421,6 @@ class Cli:
             timeout = (args.timeout, args.timeout)
         else:
             timeout = (Settings.connection_timeout, Settings.response_timeout)
-        if not self._check_tools_arg_combination(os_name, tool_name, arch):
-            self.logger.warning(
-                "Specified target combination is not valid: {} {} {}".format(
-                    os_name, tool_name, arch
-                )
-            )
 
         try:
             tool_archives = ToolArchives(
