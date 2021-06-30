@@ -462,7 +462,9 @@ class ToolArchives(QtArchives):
 
             # Filter out on version first
             if self.version:
-                if full_version not in self.versionSpec:
+                if (full_version not in self.versionSpec) and (
+                    full_version.truncate("patch") != self.version.truncate("patch")
+                ):
                     self.logger.info(
                         f"Base Version of {full_version} is different from "
                         f"requested version {self.version_str} -- skip."
@@ -501,6 +503,7 @@ class ToolArchives(QtArchives):
                         archive=archive,
                         package_desc=package_desc,
                         hashurl=hashurl,
+                        version=full_version,
                     )
                 )
 
