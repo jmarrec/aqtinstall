@@ -174,7 +174,9 @@ class QtArchives:
         all_extra=False,
         timeout=(5, 5),
     ):
-        self.version = Version(version_str)
+        self.version_str = version_str
+        self.version = Version.coerce(version_str) if version_str is not None else None
+        self.versionSpec = SimpleSpec(version_str) if version_str is not None else None
         self.target = target
         self.arch = arch
         self.os_name = os_name
@@ -449,24 +451,38 @@ class ToolArchives(QtArchives):
             self.logger.error("Downloaded metadata is corrupted. {}".format(perror))
             raise ArchiveListError("Downloaded metadata is corrupted.")
 
+        versions = []
+
         for packageupdate in self.update_xml.iter("PackageUpdate"):
             name = packageupdate.find("Name").text
-            if name != self.arch:
+            named_version = packageupdate.find("Version").text
+            full_version = Version(named_version)
+
+            versions.append((name, named_version.split("-")[0]))
+
+            # Filter out on version first
+            if self.version:
+                if full_version not in self.versionSpec:
+                    self.logger.info(
+                        f"Base Version of {full_version} is different from "
+                        f"requested version {self.version_str} -- skip."
+                    )
+                    continue
+
+            # Filter out on arch next
+            if self.arch and name != self.arch:
+                self.logger.info(
+                    f"Arch of {name} is different from requested "
+                    f"arch {self.arch} -- skip."
+                )
                 continue
+
             _archives = packageupdate.find("DownloadableArchives").text
             if _archives is not None:
                 downloadable_archives = _archives.split(", ")
             else:
                 downloadable_archives = []
-            named_version = packageupdate.find("Version").text
-            full_version = Version(named_version)
-            if full_version.truncate("patch") != self.version.truncate("patch"):
-                self.logger.warning(
-                    "Base Version of {} is different from requested version {} -- skip.".format(
-                        named_version, self.version
-                    )
-                )
-                continue
+
             package_desc = packageupdate.find("Description").text
             for archive in downloadable_archives:
                 package_url = posixpath.join(
@@ -487,6 +503,30 @@ class ToolArchives(QtArchives):
                         hashurl=hashurl,
                     )
                 )
+
+        if self.archives:
+            self.logger.debug(f"ToolArchives: {self.archives}")
+        else:
+            msg = f"{self} did not match any available tools. "
+            if versions:
+                msg += "Available tools\n"
+                msg += f"[(version, arch)] = {versions}"
+            else:
+                url = posixpath.join(archive_url, "Updates.xml")
+                msg += f"Zero tools where found to be available in {url}"
+            raise NoPackageFound(msg)
+
+        if len(self.archives) > 1:
+            self.logger.info(
+                f"Found {len(self.archives)} potential archives. " "Returning the max."
+            )
+            archive_max = max(
+                self.archives,
+                key=lambda package: package.version
+                if package.version
+                else Version("0.0.0"),
+            )
+            self.archives = [archive_max]
 
     def get_target_config(self) -> TargetConfig:
         """Get target configuration.
